@@ -1,0 +1,50 @@
+on: [push]
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    
+    - uses: azure/docker-login@v1
+      with:
+        login-server: jwtoauth20200502074242.azurecr.io
+        username: ${{ secrets.acr_jwtoauth20200502074242_username }}
+        password: ${{ secrets.acr_jwtoauth20200502074242_password }}
+    
+    - name: Build and push image to ACR
+      id: build-image
+      run: |
+        docker build "$GITHUB_WORKSPACE/azure-vote" -f  "azure-vote/Dockerfile" -t jwtoauth20200502074242.azurecr.io/kubelive1:${{ github.sha }}
+        docker push jwtoauth20200502074242.azurecr.io/kubelive1:${{ github.sha }}
+    
+    - uses: azure/k8s-set-context@v1
+      with:
+         kubeconfig: ${{ secrets.aks_kubelive1_kubeConfig }}
+      id: login
+    
+    - name: Create namespace
+      run: |
+        namespacePresent=`kubectl get namespace | grep kubelive1c1df | wc -l`
+        if [ $namespacePresent -eq 0 ]
+        then
+            echo `kubectl create namespace kubelive1c1df`
+        fi
+
+    - uses: azure/k8s-create-secret@v1
+      with:
+        namespace: kubelive1c1df
+        container-registry-url: jwtoauth20200502074242.azurecr.io
+        container-registry-username: ${{ secrets.acr_jwtoauth20200502074242_username }}
+        container-registry-password: ${{ secrets.acr_jwtoauth20200502074242_password }}
+        secret-name: kubelive1dockerauth
+       
+    - uses: azure/k8s-deploy@v1
+      with:
+        namespace: kubelive1c1df
+        manifests: |
+          manifests/deployment.yml
+          manifests/service.yml
+        images: |
+          jwtoauth20200502074242.azurecr.io/kubelive1:${{ github.sha }}
+        imagepullsecrets: |
+          kubelive1dockerauth
